@@ -1,0 +1,1006 @@
+<!doctype html>
+<html lang="pl" class="no3d">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#000000">
+<title>Gym Timer</title>
+<style>
+  :root {
+    --bg: #000;
+    --panel: #0d0d0d;
+    --line: #222;
+    --text: #e8e8e8;
+    --muted: #8a8a8a;
+    --led: #ff1f1f;
+    --led-glow: rgba(255, 30, 30, .85);
+    --led-off: #2a0606;
+    --accent: #ff2a2a;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text); }
+  body {
+    font-family: "Bahnschrift", "Roboto Condensed", "Arial Narrow", "Segoe UI", system-ui, sans-serif;
+    -webkit-tap-highlight-color: transparent;
+    overflow-x: hidden;
+  }
+  button { font: inherit; cursor: pointer; }
+  .screen { display: none; min-height: 100vh; min-height: 100dvh; }
+  .screen.active { display: flex; flex-direction: column; }
+
+  /* ---------- LED digits ---------- */
+  .led { display: inline-flex; align-items: center; gap: .06em; }
+  .digit { height: 1em; width: .6em; display: block; overflow: visible; }
+  .digit polygon { fill: var(--led-off); transition: fill .05s; }
+  .digit polygon.on { fill: var(--led); filter: drop-shadow(0 0 .02em var(--led-glow)) drop-shadow(0 0 .08em var(--led-glow)); }
+  .colon { height: 1em; width: .22em; display: block; overflow: visible; }
+  .colon circle { fill: var(--led); filter: drop-shadow(0 0 .08em var(--led-glow)); }
+
+  /* ---------- Start screen ---------- */
+  .wrap { width: 100%; max-width: 960px; margin: 0 auto; padding: 24px 16px 40px; }
+  .brand { display: flex; align-items: center; gap: 14px; margin: 8px 0 28px; }
+  .brand .led { font-size: 54px; }
+  .brand h1 { margin: 0; font-size: 28px; letter-spacing: .08em; text-transform: uppercase; }
+  .brand p { margin: 2px 0 0; color: var(--muted); font-size: 14px; letter-spacing: .04em; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 14px; }
+  .card {
+    text-align: left; background: var(--panel); color: var(--text);
+    border: 1px solid var(--line); border-radius: 12px; padding: 18px;
+    transition: border-color .15s, transform .15s;
+  }
+  .card:hover, .card:focus-visible { border-color: var(--accent); outline: none; transform: translateY(-2px); }
+  .card .head { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; }
+  .card .head .led { font-size: 40px; }
+  .card .head span { font-size: 22px; text-transform: uppercase; letter-spacing: .08em; }
+  .card ol { margin: 0; padding-left: 20px; color: var(--muted); font-size: 14px; line-height: 1.55; }
+
+  /* ---------- Cheat sheet ---------- */
+  .back { background: none; border: 0; color: var(--muted); padding: 6px 0; font-size: 15px; letter-spacing: .05em; }
+  .back:hover { color: var(--text); }
+  .sheet-title { display: flex; align-items: center; gap: 14px; margin: 14px 0 6px; }
+  .sheet-title .led { font-size: 56px; }
+  .sheet-title h2 { margin: 0; font-size: 34px; text-transform: uppercase; letter-spacing: .08em; }
+  .meta { color: var(--muted); margin: 0 0 22px; font-size: 15px; letter-spacing: .03em; }
+  .ex-list { list-style: none; margin: 0 0 28px; padding: 0; display: grid; gap: 10px; }
+  .ex-list li {
+    display: grid; grid-template-columns: 44px 132px 1fr auto; gap: 14px; align-items: center;
+    background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px;
+  }
+  .ex-list .anim { width: 132px; height: 104px; }
+  .no3d .ex-list li { grid-template-columns: 44px 1fr auto; }
+
+  /* animacje 3D */
+  .anim { position: relative; background: #050505; border: 1px solid #1a1a1a; border-radius: 8px; overflow: hidden; }
+  .anim canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+  .no3d .anim { display: none !important; }
+  .ex-list .num { font-size: 34px; }
+  .ex-list .name { font-size: 19px; font-weight: 600; letter-spacing: .02em; }
+  .ex-list .detail { color: var(--muted); font-size: 14px; margin-top: 3px; line-height: 1.35; }
+  .tag { display: inline-block; margin-top: 6px; font-size: 11px; text-transform: uppercase; letter-spacing: .1em; color: var(--accent); border: 1px solid #4a1010; border-radius: 4px; padding: 2px 6px; }
+  .reps { text-align: right; white-space: nowrap; }
+  .reps b { display: block; font-size: 26px; color: var(--led); text-shadow: 0 0 10px var(--led-glow); }
+  .reps small { color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: .08em; }
+  .btn-start {
+    width: 100%; padding: 20px; font-size: 26px; font-weight: 700; letter-spacing: .2em; text-transform: uppercase;
+    color: #fff; background: #c40d0d; border: 0; border-radius: 12px;
+    box-shadow: 0 0 24px rgba(255, 20, 20, .45);
+  }
+  .btn-start:hover { background: #e01010; }
+
+  /* ---------- Workout screen ---------- */
+  #workout { align-items: center; justify-content: space-between; padding: 14px 16px 18px; gap: 10px; }
+  .topbar { width: 100%; max-width: 1200px; display: flex; justify-content: space-between; align-items: center; color: var(--muted); font-size: 15px; letter-spacing: .1em; text-transform: uppercase; }
+  .icon-btn { background: none; border: 1px solid var(--line); color: var(--muted); border-radius: 8px; padding: 6px 12px; font-size: 13px; letter-spacing: .08em; text-transform: uppercase; }
+  .icon-btn:hover { color: var(--text); border-color: #444; }
+
+  .counters { display: flex; gap: clamp(20px, 6vw, 80px); justify-content: center; align-items: flex-end; }
+  .counter { display: flex; flex-direction: column; align-items: center; gap: 6px; }
+  .counter label { font-size: clamp(12px, 1.6vw, 18px); letter-spacing: .2em; color: var(--muted); text-transform: uppercase; }
+  .counter .val { display: flex; align-items: center; gap: .2em; font-size: clamp(48px, 10vh, 110px); }
+  .counter .of { font-size: .4em; color: #7a1a1a; letter-spacing: .05em; align-self: flex-end; padding-bottom: .1em; font-weight: 700; }
+
+  .clock-box { display: flex; flex-direction: column; align-items: center; gap: 4px; }
+  .phase { font-size: clamp(16px, 2.4vw, 26px); letter-spacing: .35em; text-transform: uppercase; color: var(--led); text-shadow: 0 0 12px var(--led-glow); min-height: 1.3em; }
+  #clock { font-size: min(30vw, 34vh); }
+  #clock.paused { animation: blink 1s steps(2, start) infinite; }
+  #clock.warn .digit polygon.on { fill: #ff4d4d; }
+  @keyframes blink { to { visibility: hidden; } }
+
+  .now-row { display: flex; align-items: center; justify-content: center; gap: clamp(12px, 3vw, 32px); width: 100%; max-width: 1100px; }
+  #nowAnim { width: clamp(120px, min(36vw, 30vh), 340px); aspect-ratio: 4 / 3; flex: none; border-radius: 10px; }
+  .now-row .now { text-align: left; }
+  .no3d .now-row .now { text-align: center; }
+  .now { text-align: center; max-width: 1000px; }
+  .now .name { font-size: clamp(24px, 4.4vw, 52px); font-weight: 700; letter-spacing: .03em; line-height: 1.1; }
+  .now .detail { color: var(--muted); font-size: clamp(14px, 1.8vw, 20px); margin-top: 6px; }
+  .now .reps-line { color: var(--led); font-size: clamp(16px, 2.2vw, 24px); margin-top: 6px; letter-spacing: .08em; text-shadow: 0 0 10px var(--led-glow); }
+  .next { color: var(--muted); font-size: clamp(13px, 1.6vw, 18px); letter-spacing: .05em; text-align: center; }
+  .next b { color: #bbb; font-weight: 600; }
+
+  .progress { display: grid; grid-template-columns: repeat(5, auto); gap: 14px; justify-content: center; }
+  .progress .round { display: flex; gap: 5px; }
+  .progress i { width: clamp(9px, 1.4vw, 14px); height: clamp(9px, 1.4vw, 14px); border-radius: 2px; background: var(--led-off); display: block; }
+  .progress i.done { background: #7d0e0e; }
+  .progress i.cur { background: var(--led); box-shadow: 0 0 8px var(--led-glow); }
+
+  .controls { display: flex; gap: 12px; width: 100%; max-width: 560px; }
+  .controls button { flex: 1; padding: 16px; border-radius: 12px; font-size: 20px; font-weight: 700; letter-spacing: .15em; text-transform: uppercase; }
+  #btnPause { background: #1b1b1b; color: #fff; border: 1px solid #333; }
+  #btnPause.resume { background: #c40d0d; border-color: #c40d0d; box-shadow: 0 0 20px rgba(255, 20, 20, .4); }
+  #btnReset { background: none; color: var(--muted); border: 1px solid #333; }
+  #btnReset.confirm { color: #fff; border-color: var(--accent); background: #3a0707; }
+  .progress-box { display: flex; flex-direction: column; align-items: center; gap: 8px; }
+  .pct { color: var(--led); font-size: clamp(32px, 4vw, 44px); font-weight: 700; letter-spacing: .12em; text-shadow: 0 0 10px var(--led-glow); font-variant-numeric: tabular-nums; }
+
+  /* ---------- Finish ---------- */
+  #finish { align-items: center; justify-content: center; gap: 24px; padding: 16px; text-align: center; }
+  #finish .led { font-size: min(24vw, 30vh); }
+  #finish h2 { margin: 0; font-size: clamp(28px, 5vw, 54px); letter-spacing: .2em; text-transform: uppercase; color: var(--led); text-shadow: 0 0 16px var(--led-glow); }
+  #finish p { margin: 0; color: var(--muted); font-size: 18px; }
+  #finish .btn-start { max-width: 420px; }
+
+  @media (max-width: 560px) {
+    .ex-list li { grid-template-columns: 26px 96px 1fr; gap: 10px; padding: 12px; }
+    .ex-list .anim { width: 96px; height: 80px; }
+    .no3d .ex-list li { grid-template-columns: 34px 1fr; }
+    .ex-list .reps { grid-column: 3; text-align: left; }
+    .no3d .ex-list .reps { grid-column: 2; }
+    .ex-list .reps b { display: inline; font-size: 20px; margin-right: 6px; }
+    .progress { gap: 8px; }
+    .progress .round { gap: 3px; }
+    .controls button { font-size: 17px; padding: 14px; }
+  }
+  @media (max-height: 560px) and (orientation: landscape) {
+    #clock { font-size: 30vh; }
+    .counter .val { font-size: 12vh; }
+    .now .detail, .next { display: none; }
+  }
+</style>
+</head>
+<body>
+
+<!-- Ekran 1: wybór treningu -->
+<section id="home" class="screen active">
+  <div class="wrap">
+    <div class="brand">
+      <span class="led" data-led="30"></span>
+      <div>
+        <h1>Gym Timer</h1>
+        <p>5 serii × 6 ćwiczeń · 1 minuta na ćwiczenie · 30 minut</p>
+      </div>
+    </div>
+    <div class="grid" id="sessionGrid"></div>
+  </div>
+</section>
+
+<!-- Ekran 2: ściągawka -->
+<section id="sheet" class="screen">
+  <div class="wrap">
+    <button class="back" id="btnBack">← Wybór treningu</button>
+    <div class="sheet-title">
+      <span class="led" id="sheetNum"></span>
+      <h2 id="sheetTitle"></h2>
+    </div>
+    <p class="meta">5 serii · 6 ćwiczeń · każde ćwiczenie = 1 minuta (powtórzenia + odpoczynek) · łącznie 30:00 · start po 10 s przygotowania</p>
+    <ol class="ex-list" id="exList"></ol>
+    <button class="btn-start" id="btnStart">Start</button>
+  </div>
+</section>
+
+<!-- Ekran 3: trening -->
+<section id="workout" class="screen">
+  <div class="topbar">
+    <span id="woTitle"></span>
+    <button class="icon-btn" id="btnFs">Pełny ekran</button>
+  </div>
+
+  <div class="counters">
+    <div class="counter">
+      <label>Seria</label>
+      <div class="val"><span class="led" id="roundLed"></span><span class="of">/5</span></div>
+    </div>
+    <div class="counter">
+      <label>Ćwiczenie</label>
+      <div class="val"><span class="led" id="exLed"></span><span class="of">/6</span></div>
+    </div>
+  </div>
+
+  <div class="clock-box">
+    <div class="phase" id="phase"></div>
+    <span class="led" id="clock"></span>
+  </div>
+
+  <div class="now-row">
+    <div class="anim" id="nowAnim"></div>
+    <div class="now">
+      <div class="name" id="nowName"></div>
+      <div class="detail" id="nowDetail"></div>
+      <div class="reps-line" id="nowReps"></div>
+    </div>
+  </div>
+
+  <div class="next" id="next"></div>
+  <div class="progress-box">
+    <div class="progress" id="progress"></div>
+    <div class="pct" id="pct">0%</div>
+  </div>
+
+  <div class="controls">
+    <button id="btnPause">Pauza</button>
+    <button id="btnReset">Reset</button>
+  </div>
+</section>
+
+<!-- Ekran 4: koniec -->
+<section id="finish" class="screen">
+  <span class="led" id="finishLed"></span>
+  <h2>Koniec!</h2>
+  <p id="finishText"></p>
+  <button class="btn-start" id="btnHome">Wróć do wyboru</button>
+</section>
+
+<script>
+/* ================= DANE ================= */
+const SESSIONS = [
+  [
+    { name: "Goblet Squat", detail: "Standing, 1 DB held vertically at chest", reps: 10, tag: "The Squat" },
+    { name: "Dumbbell Strict Shoulder Press", detail: "Standing, 2 DBs", reps: 10, tag: "The Shoulder Press" },
+    { name: "Dumbbell Floor Press", detail: "Lying, 2 DBs", reps: 10 },
+    { name: "Dumbbell Bent-Over Row", detail: "Standing, 2 DBs, overhand grip", reps: 10 },
+    { name: "Dumbbell High Pull", detail: "Standing, 2 DBs pulled explosively from knees to chest height with high elbows", reps: 10 },
+    { name: "Dumbbell Pullover", detail: "Lying, 1 DB held with both hands", reps: 10 },
+  ],
+  [
+    { name: "Dumbbell Conventional Deadlift", detail: "Standing, 2 DBs", reps: 10 },
+    { name: "Dumbbell Upright Row", detail: "Standing, 2 DBs", reps: 10 },
+    { name: "Dumbbell Glute Bridge", detail: "Lying, 2 DBs resting securely on hips", reps: 10 },
+    { name: "Dumbbell Neutral-Grip Bent-Over Row", detail: "Standing, 2 DBs, palms facing each other", reps: 10 },
+    { name: "Dumbbell Thrusters", detail: "Standing, 2 DBs", reps: 10, tag: "The Squat & The Shoulder Press combo" },
+    { name: "Lying Dumbbell Tricep Extension", detail: "Lying, 1 DB held with both hands", reps: 10 },
+  ],
+  [
+    { name: "Dumbbell Sumo Squat", detail: "Standing, 2 DBs held between wide-set legs", reps: 10, tag: "The Squat" },
+    { name: "Dumbbell Underhand Row", detail: "Standing, 2 DBs, palms facing up", reps: 10 },
+    { name: "Lying Dumbbell Narrow Press", detail: "Lying, 2 DBs held close together", reps: 10 },
+    { name: "Dumbbell Push Press", detail: "Standing, 2 DBs with a minor knee-dip for momentum", reps: 10, tag: "The Shoulder Press" },
+    { name: "Dumbbell Hang Power Clean", detail: "Standing, 2 DBs caught dynamically at the shoulders", reps: 10 },
+    { name: "Lying Weighted Crunch", detail: "Lying, 1 DB held against upper chest", reps: 10 },
+  ],
+  [
+    { name: "Dumbbell Reverse Lunges", detail: "Standing, 2 DBs at sides, alternating legs", reps: 10, total: true },
+    { name: "Dumbbell Clean and Press", detail: "Standing, 2 DBs", reps: 10, tag: "The Shoulder Press" },
+    { name: "Lying Dumbbell Squeeze Press", detail: "Lying, 2 DBs actively pressed inward against each other", reps: 10 },
+    { name: "Dumbbell Renegade Row", detail: "Plank position on 2 DBs, alternating rows (5 per side)", reps: 10, total: true },
+    { name: "Dumbbell Conventional Deadlift", detail: "Standing, 2 DBs", reps: 10 },
+    { name: "Lying Dumbbell Russian Twist", detail: "Seated V-sit position, 1 DB held with both hands, alternating sides", reps: 20, total: true },
+  ],
+  [
+    { name: "Dumbbell Suitcase Squat", detail: "Standing, 2 DBs", reps: 10, tag: "The Squat" },
+    { name: "Dumbbell Romanian Deadlift (RDL)", detail: "Standing, 2 DBs focusing on hip hinge", reps: 10 },
+    { name: "Dumbbell Glute Bridge with Floor Press", detail: "Lying, 2 DBs – hold the bridge static while pressing", reps: 10 },
+    { name: "Dumbbell Bicep Curl to Shoulder Press", detail: "Standing, 2 DBs", reps: 10, tag: "The Shoulder Press" },
+    { name: "Dumbbell Standing Horizontal Press-Out", detail: "Standing, 1 DB pressed straight out from chest", reps: 10 },
+    { name: "Lying Dumbbell Chest Flys", detail: "Lying, 2 DBs", reps: 10 },
+  ],
+];
+
+const PREP_MS = 10_000;
+const EX_MS = 60_000;
+const ROUNDS = 5;
+const PER_ROUND = 6;
+const TOTAL_MS = PREP_MS + ROUNDS * PER_ROUND * EX_MS;
+
+/* ================= LED 7-SEGMENT ================= */
+const SEGMENTS = (() => {
+  const h = (y, x1, x2) => `${x1},${y} ${x1 + 5},${y - 5} ${x2 - 5},${y - 5} ${x2},${y} ${x2 - 5},${y + 5} ${x1 + 5},${y + 5}`;
+  const v = (x, y1, y2) => `${x},${y1} ${x + 5},${y1 + 5} ${x + 5},${y2 - 5} ${x},${y2} ${x - 5},${y2 - 5} ${x - 5},${y1 + 5}`;
+  return {
+    a: h(7, 10, 50), g: h(50, 10, 50), d: h(93, 10, 50),
+    f: v(7, 9, 48), b: v(53, 9, 48), e: v(7, 52, 91), c: v(53, 52, 91),
+  };
+})();
+const DIGITS = {
+  "0": "abcdef", "1": "bc", "2": "abged", "3": "abgcd", "4": "fgbc", "5": "afgcd",
+  "6": "afgedc", "7": "abc", "8": "abcdefg", "9": "abcdfg", " ": "", "-": "g",
+};
+const SVGNS = "http://www.w3.org/2000/svg";
+
+function makeDigit() {
+  const svg = document.createElementNS(SVGNS, "svg");
+  svg.setAttribute("viewBox", "-2 0 64 100");
+  svg.setAttribute("class", "digit");
+  const g = document.createElementNS(SVGNS, "g");
+  g.setAttribute("transform", "skewX(-6) translate(5 0)");
+  for (const [k, pts] of Object.entries(SEGMENTS)) {
+    const p = document.createElementNS(SVGNS, "polygon");
+    p.setAttribute("points", pts);
+    p.dataset.seg = k;
+    g.appendChild(p);
+  }
+  svg.appendChild(g);
+  return svg;
+}
+function makeColon() {
+  const svg = document.createElementNS(SVGNS, "svg");
+  svg.setAttribute("viewBox", "0 0 20 100");
+  svg.setAttribute("class", "colon");
+  for (const cy of [32, 68]) {
+    const c = document.createElementNS(SVGNS, "circle");
+    c.setAttribute("cx", "8"); c.setAttribute("cy", cy); c.setAttribute("r", "6");
+    svg.appendChild(c);
+  }
+  return svg;
+}
+function setDigit(svg, ch) {
+  const on = DIGITS[ch] ?? "";
+  svg.querySelectorAll("polygon").forEach(p => p.classList.toggle("on", on.includes(p.dataset.seg)));
+}
+/** Builds an LED display from a pattern like "88:88" and returns a setter. */
+function buildLed(el, pattern) {
+  el.innerHTML = "";
+  const digits = [];
+  for (const ch of pattern) {
+    if (ch === ":") el.appendChild(makeColon());
+    else { const d = makeDigit(); el.appendChild(d); digits.push(d); }
+  }
+  let last = null;
+  return (str) => {
+    if (str === last) return;
+    last = str;
+    [...str.replace(/:/g, "")].forEach((ch, i) => digits[i] && setDigit(digits[i], ch));
+  };
+}
+
+/* ================= AUDIO ================= */
+let audioCtx = null;
+function ensureAudio() {
+  if (!audioCtx) {
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if (AC) audioCtx = new AC();
+  }
+  if (audioCtx && audioCtx.state === "suspended") audioCtx.resume();
+}
+function tone(freq, dur, vol = 0.5, type = "square", when = 0) {
+  if (!audioCtx) return;
+  const t0 = audioCtx.currentTime + when;
+  const osc = audioCtx.createOscillator();
+  const gain = audioCtx.createGain();
+  osc.type = type;
+  osc.frequency.value = freq;
+  gain.gain.setValueAtTime(0, t0);
+  gain.gain.linearRampToValueAtTime(vol, t0 + 0.01);
+  gain.gain.setValueAtTime(vol, t0 + dur - 0.03);
+  gain.gain.linearRampToValueAtTime(0, t0 + dur);
+  osc.connect(gain).connect(audioCtx.destination);
+  osc.start(t0);
+  osc.stop(t0 + dur + 0.02);
+}
+const beepShort = () => tone(880, 0.14, 0.45);
+const beepLong  = () => tone(880, 1.0, 0.5);
+const beepFinal = () => { tone(880, 0.5, 0.5); tone(1175, 0.5, 0.5, "square", 0.55); tone(1760, 1.2, 0.5, "square", 1.1); };
+
+/* ================= STAN ================= */
+const $ = (id) => document.getElementById(id);
+const state = {
+  session: 0,
+  running: false,
+  elapsed: 0,      // ms zakumulowane przed ostatnim startem/wznowieniem
+  lastStart: 0,    // performance.now() ostatniego startu/wznowienia
+  prevT: 0,        // do wykrywania przejść przez pełne sekundy (dźwięki)
+  active: false,
+  rafId: 0,
+  intId: 0,
+};
+const elapsedNow = () => state.running ? state.elapsed + (performance.now() - state.lastStart) : state.elapsed;
+
+/* ================= UI: ekrany ================= */
+function show(id) {
+  document.querySelectorAll(".screen").forEach(s => s.classList.toggle("active", s.id === id));
+  window.scrollTo(0, 0);
+}
+const repsText = (ex) => `${ex.reps} powt.${ex.total ? " łącznie" : ""}`;
+
+// Ekran wyboru
+buildLed(document.querySelector("[data-led]"), "88")("30");
+SESSIONS.forEach((list, i) => {
+  const b = document.createElement("button");
+  b.className = "card";
+  b.innerHTML = `<div class="head"><span class="led"></span><span>Sesja</span></div>
+    <ol>${list.map(e => `<li>${e.name}</li>`).join("")}</ol>`;
+  buildLed(b.querySelector(".led"), "8")(String(i + 1));
+  b.addEventListener("click", () => openSheet(i));
+  $("sessionGrid").appendChild(b);
+});
+
+// Ściągawka
+const setSheetNum = buildLed($("sheetNum"), "8");
+function openSheet(i) {
+  state.session = i;
+  setSheetNum(String(i + 1));
+  $("sheetTitle").textContent = `Sesja ${i + 1}`;
+  $("exList").innerHTML = "";
+  SESSIONS[i].forEach((ex, n) => {
+    const li = document.createElement("li");
+    li.innerHTML = `<span class="led num"></span>
+      <div class="anim"></div>
+      <div><div class="name"></div><div class="detail"></div>${ex.tag ? `<span class="tag"></span>` : ""}</div>
+      <div class="reps"><b>${ex.reps}</b><small>${ex.total ? "powt. łącznie" : "powt."}</small></div>`;
+    li.querySelector(".anim").dataset.anim = ex.name;
+    li.querySelector(".name").textContent = ex.name;
+    li.querySelector(".detail").textContent = ex.detail;
+    if (ex.tag) li.querySelector(".tag").textContent = ex.tag;
+    buildLed(li.querySelector(".num"), "8")(String(n + 1));
+    $("exList").appendChild(li);
+  });
+  show("sheet");
+}
+$("btnBack").addEventListener("click", () => show("home"));
+
+/* ================= TRENING ================= */
+const setClock = buildLed($("clock"), "88:88");
+const setRound = buildLed($("roundLed"), "8");
+const setEx = buildLed($("exLed"), "8");
+const setFinish = buildLed($("finishLed"), "88:88");
+
+// siatka postępu 5 × 6
+const dots = [];
+for (let r = 0; r < ROUNDS; r++) {
+  const g = document.createElement("div");
+  g.className = "round";
+  for (let e = 0; e < PER_ROUND; e++) { const i = document.createElement("i"); g.appendChild(i); dots.push(i); }
+  $("progress").appendChild(g);
+}
+
+const pad = (n) => String(n).padStart(2, "0");
+const fmt = (s) => `${pad(Math.floor(s / 60))}:${pad(s % 60)}`;
+
+function startWorkout() {
+  ensureAudio();
+  Object.assign(state, { running: true, elapsed: 0, lastStart: performance.now(), prevT: 0, active: true });
+  $("woTitle").textContent = `Sesja ${state.session + 1}`;
+  lastRenderKey = "";
+  setPausedUI(false);
+  show("workout");
+  requestWakeLock();
+  loop();
+  clearInterval(state.intId);
+  state.intId = setInterval(tick, 100); // działa też, gdy karta jest w tle (rAF wtedy stoi)
+}
+
+function loop() {
+  tick();
+  if (state.active) state.rafId = requestAnimationFrame(loop);
+}
+
+function tick() {
+  if (!state.active) return;
+  const t = Math.min(elapsedNow(), TOTAL_MS);
+  handleBeeps(state.prevT, t);
+  state.prevT = t;
+  render(t);
+  if (t >= TOTAL_MS) finishWorkout();
+}
+
+/* Dźwięki: przy każdej pełnej sekundzie sprawdzamy, ile zostało do końca bieżącego odcinka.
+   4,3,2,1 s → krótki pik; 0 → długi piiiik (na koniec całości — fanfara). */
+function handleBeeps(prev, cur) {
+  let kFrom = Math.floor(prev / 1000) + 1;
+  const kTo = Math.floor(cur / 1000);
+  if (kTo - kFrom > 4) kFrom = kTo; // po długim uśpieniu karty nie odtwarzaj zaległych dźwięków
+  for (let k = kFrom; k <= kTo; k++) {
+    const prepS = PREP_MS / 1000, exS = EX_MS / 1000;
+    let rem;
+    if (k <= prepS) rem = prepS - k;
+    else { const m = (k - prepS) % exS; rem = m === 0 ? 0 : exS - m; }
+    if (k * 1000 >= TOTAL_MS) beepFinal();
+    else if (rem === 0) beepLong();
+    else if (rem <= 4) beepShort();
+  }
+}
+
+let lastRenderKey = "";
+function render(t) {
+  const list = SESSIONS[state.session];
+  let secs, idx, phase;
+  if (t < PREP_MS) {
+    secs = Math.ceil((PREP_MS - t) / 1000);
+    idx = 0;
+    phase = "prep";
+  } else {
+    const w = t - PREP_MS;
+    idx = Math.min(Math.floor(w / EX_MS), ROUNDS * PER_ROUND - 1);
+    secs = Math.ceil((EX_MS - (w - idx * EX_MS)) / 1000);
+    phase = "work";
+  }
+  const totalLeft = Math.ceil((TOTAL_MS - Math.max(t, PREP_MS)) / 1000);
+  const key = `${phase}|${idx}|${secs}|${state.running}`;
+  if (key === lastRenderKey) return;
+  lastRenderKey = key;
+
+  const round = Math.floor(idx / PER_ROUND);
+  const exI = idx % PER_ROUND;
+  const ex = list[exI];
+
+  $("nowAnim").dataset.anim = ex.name;
+  setClock(fmt(secs));
+  $("clock").classList.toggle("warn", secs <= 4);
+  setRound(String(round + 1));
+  setEx(String(exI + 1));
+
+  if (phase === "prep") {
+    $("phase").textContent = state.running ? "Przygotuj się" : "Pauza";
+    $("nowName").textContent = ex.name;
+    $("nowDetail").textContent = ex.detail;
+    $("nowReps").textContent = `Na start: ${repsText(ex)}`;
+    $("next").innerHTML = "";
+  } else {
+    $("phase").textContent = state.running ? "Praca" : "Pauza";
+    $("nowName").textContent = ex.name;
+    $("nowDetail").textContent = ex.detail;
+    $("nowReps").textContent = repsText(ex) + " · reszta minuty = odpoczynek";
+    const nIdx = idx + 1;
+    if (nIdx < ROUNDS * PER_ROUND) {
+      const n = list[nIdx % PER_ROUND];
+      const newRound = nIdx % PER_ROUND === 0 ? ` <span>(seria ${Math.floor(nIdx / PER_ROUND) + 1})</span>` : "";
+      $("next").innerHTML = `Następne: <b></b>${newRound}`;
+      $("next").querySelector("b").textContent = n.name;
+    } else {
+      $("next").innerHTML = "Ostatnie ćwiczenie!";
+    }
+  }
+
+  dots.forEach((d, i) => {
+    d.classList.toggle("done", phase === "work" && i < idx);
+    d.classList.toggle("cur", phase === "work" && i === idx);
+  });
+  const workTotal = TOTAL_MS - PREP_MS;
+  $("pct").textContent = `${Math.floor(((workTotal / 1000 - totalLeft) / (workTotal / 1000)) * 100)}%`;
+}
+
+function setPausedUI(paused) {
+  $("btnPause").textContent = paused ? "Wznów" : "Pauza";
+  $("btnPause").classList.toggle("resume", paused);
+  $("clock").classList.toggle("paused", paused);
+}
+
+function togglePause() {
+  if (!state.active) return;
+  if (state.running) {
+    state.elapsed = elapsedNow();
+    state.running = false;
+    setPausedUI(true);
+    releaseWakeLock();
+  } else {
+    ensureAudio();
+    state.lastStart = performance.now();
+    state.running = true;
+    setPausedUI(false);
+    requestWakeLock();
+  }
+  lastRenderKey = "";
+  tick();
+}
+
+function stopWorkout() {
+  state.active = false;
+  state.running = false;
+  cancelAnimationFrame(state.rafId);
+  clearInterval(state.intId);
+  releaseWakeLock();
+}
+
+function finishWorkout() {
+  stopWorkout();
+  setFinish("30:00");
+  $("finishText").textContent = `Sesja ${state.session + 1} ukończona — 5 serii × 6 ćwiczeń.`;
+  show("finish");
+}
+
+let resetArmed = null;
+function resetWorkout() {
+  if (!resetArmed) {
+    $("btnReset").textContent = "Na pewno?";
+    $("btnReset").classList.add("confirm");
+    resetArmed = setTimeout(disarmReset, 3000);
+    return;
+  }
+  disarmReset();
+  stopWorkout();
+  show("home");
+}
+function disarmReset() {
+  clearTimeout(resetArmed);
+  resetArmed = null;
+  $("btnReset").textContent = "Reset";
+  $("btnReset").classList.remove("confirm");
+}
+
+$("btnStart").addEventListener("click", startWorkout);
+$("btnPause").addEventListener("click", togglePause);
+$("btnReset").addEventListener("click", resetWorkout);
+$("btnHome").addEventListener("click", () => show("home"));
+$("btnFs").addEventListener("click", () => {
+  if (document.fullscreenElement) document.exitFullscreen?.();
+  else document.documentElement.requestFullscreen?.().catch(() => {});
+});
+document.addEventListener("keydown", (e) => {
+  if (!state.active) return;
+  if (e.code === "Space") { e.preventDefault(); togglePause(); }
+});
+
+/* ================= Ekran nie gaśnie ================= */
+let wakeLock = null;
+async function requestWakeLock() {
+  try { if ("wakeLock" in navigator) wakeLock = await navigator.wakeLock.request("screen"); } catch (_) {}
+}
+function releaseWakeLock() {
+  try { wakeLock?.release(); } catch (_) {}
+  wakeLock = null;
+}
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "visible" && state.active && state.running) requestWakeLock();
+});
+</script>
+
+<!-- ================= ANIMACJE 3D =================
+     Ludzik liczony z pozycji stawów (IK dwóch kości). Każde ćwiczenie = klatki kluczowe:
+     P – środek bioder [x,y,z]; lean – pochylenie tułowia od pionu (rad, + do przodu, -π/2 = leżenie na plecach);
+     twist – skręt barków; nod – głowa (+ broda w dół, - głowa w górę);
+     hand – cel dłoni [na zewnątrz, w górę, do przodu] w układzie: tułowia od barku (mode "torso"),
+            świata od barku (mode "world") albo miednicy od bioder (mode "pelvis"); elb – kierunek łokcia;
+     foot – kostka [na zewnątrz, y, z] w świecie; knee – kierunek kolana; toe – kierunek stopy.
+     Przyrostek L/R (handL, footR…) nadpisuje wartość dla jednej strony. -->
+<!-- Biblioteka 3D leży obok index.html (three.min.js) – działa bez internetu.
+     Gdyby pliku zabrakło, próbujemy wczytać ją z internetu. -->
+<script src="three.min.js"></script>
+<script>window.THREE || document.write('<script src="https://cdn.jsdelivr.net/npm/three@0.149.0/build/three.min.js"><\/script>');</script>
+<script>
+if (window.THREE) {
+  document.documentElement.classList.remove("no3d");
+  init3d();
+}
+
+function init3d() {
+THREE.ColorManagement.legacyMode = false;   // kolory i światło jak w nowszych wersjach three.js
+const V3 = (a) => new THREE.Vector3(a[0], a[1], a[2]);
+const YAX = new THREE.Vector3(0, 1, 0);
+const LEN = { thigh: 0.44, shin: 0.42, upper: 0.29, fore: 0.27, torso: 0.5 };
+
+/* ---------- Ruchy ---------- */
+const ST = { P: [0, 0.94, 0], lean: 0.04, nod: 0, twist: 0, foot: [0.13, 0.07, 0], knee: [0.15, 0, 1], toe: [0.12, 0, 1], hand: [0.03, -0.54, 0.03], elb: [0.2, 0, -1] };
+const LIE = { P: [0, 0.11, 0.3], lean: -1.571, nod: 0.15, twist: 0, foot: [0.15, 0.07, 0.95], knee: [0.15, 1, 0.2], toe: [0.1, 0, 1], hand: [0.03, -0.1, 0.4], elb: [1, 0, 0] };
+const RACK = { hand: [0.05, 0.02, 0.1], elb: [0.5, -1, 0.6] };
+const OVER = { hand: [-0.02, 0.55, 0.03], elb: [1, 0, 0.2] };
+const rep = (A, B, o = {}) => [[0, A], [o.h1 ?? 0.08, A], [o.d ?? 0.45, B], [o.h2 ?? 0.55, B], [o.u ?? 0.92, A], [1, A]];
+
+const ROW = { P: [0, 0.82, -0.14], lean: 1.15, nod: -0.75 };
+const ROW_DOWN = { hand: [0.02, -0.22, 0.49], elb: [0.3, 0, -0.3] };
+const CLEAN = {
+  H: { P: [0, 0.82, -0.08], lean: 0.45, nod: -0.3, hand: [0.03, -0.49, 0.24], elb: [0.3, 0, -1] },
+  X: { P: [0, 0.97, 0], lean: -0.05, nod: 0, hand: [0.03, -0.24, 0.16], elb: [1, 0.6, -0.2] },
+  C: { P: [0, 0.8, -0.06], lean: 0.15, nod: 0, hand: [0.05, 0.02, 0.1], elb: [0.3, -0.4, 1] },
+  S: { P: [0, 0.94, 0], lean: 0.03, nod: 0, hand: [0.05, 0.02, 0.1], elb: [0.3, -0.4, 1] },
+};
+const BRIDGE_UP = { P: [0, 0.4, 0.25], lean: -2.11, nod: 0.6 };
+const LUNGE_S = { P: [0, 0.94, 0], lean: 0.04, footL: [0.12, 0.07, 0], footR: [0.12, 0.07, 0], toeL: [0.1, 0, 1], toeR: [0.1, 0, 1], kneeL: [0.15, 0, 1], kneeR: [0.15, 0, 1] };
+const lungeBack = (back, front) => ({
+  P: [0, 0.55, -0.36], lean: 0.08,
+  ["foot" + back]: [0.12, 0.13, -0.84], ["toe" + back]: [0, -0.6, 1], ["knee" + back]: [0.05, -0.4, 1],
+  ["foot" + front]: [0.12, 0.07, 0.06], ["toe" + front]: [0.1, 0, 1], ["knee" + front]: [0.1, 0, 1],
+});
+const PLANK = { handL: [-0.02, -0.54, 0], handR: [-0.02, -0.54, 0], elbL: [0.3, 0, -0.5], elbR: [0.3, 0, -0.5] };
+const rowSide = (s) => ({ ...PLANK, ["hand" + s]: [0.02, -0.2, -0.22], ["elb" + s]: [0.4, 1, -0.6] });
+
+const EX = {
+  "Goblet Squat": { view: "stand", period: 3.2, mode: "torso", db: "one", dbAxis: "up", dbOff: [0, -0.1, 0.03],
+    base: { ...ST, foot: [0.17, 0.07, 0], toe: [0.35, 0, 1], knee: [0.45, 0, 1], hand: [-0.15, -0.06, 0.2], elb: [0.2, -1, 0.2] },
+    kf: rep({ P: [0, 0.94, 0], lean: 0.06, nod: 0 }, { P: [0, 0.43, -0.2], lean: 0.5, nod: -0.45 }) },
+  "Dumbbell Strict Shoulder Press": { view: "stand", period: 2.8, mode: "torso", db: "pair", dbAxis: "lat",
+    base: { ...ST }, kf: rep(RACK, OVER, { d: 0.4, h2: 0.5 }) },
+  "Dumbbell Floor Press": { view: "floor", period: 3, mode: "torso", db: "pair", dbAxis: "lat",
+    base: { ...LIE }, kf: rep({ hand: [0.12, -0.12, 0.2], elb: [1, -0.5, -0.35] }, { hand: [0, -0.06, 0.54], elb: [1, -0.4, 0] }) },
+  "Dumbbell Bent-Over Row": { view: "stand", period: 2.8, mode: "torso", db: "pair", dbAxis: "lat",
+    base: { ...ST, ...ROW }, kf: rep(ROW_DOWN, { hand: [0.05, -0.3, 0.04], elb: [0.3, 0.3, -1] }) },
+  "Dumbbell High Pull": { view: "stand", period: 2.8, mode: "torso", db: "pair", dbAxis: "lat", base: { ...ST },
+    kf: (() => { const A = { P: [0, 0.8, -0.1], lean: 0.6, nod: -0.4, hand: [0.03, -0.45, 0.3], elb: [0.3, 0, -1] };
+      const B = { P: [0, 0.96, 0], lean: 0, nod: 0, hand: [-0.02, -0.12, 0.13], elb: [1, 0.7, -0.1] };
+      return [[0, A], [0.1, A], [0.35, B], [0.45, B], [0.9, A], [1, A]]; })() },
+  "Dumbbell Pullover": { view: "floor", period: 3.4, mode: "torso", db: "one", dbAxis: "fore", dbAlong: -0.07,
+    base: { ...LIE }, kf: rep({ hand: [-0.16, 0.02, 0.52], elb: [0.6, 0, 0.3] }, { hand: [-0.16, 0.48, 0.12], elb: [0.6, -0.2, 0.6] }) },
+
+  "Dumbbell Conventional Deadlift": { view: "stand", period: 3.2, mode: "world", db: "pair", dbAxis: "lat",
+    base: { ...ST, hand: [0.02, -0.54, 0.04], knee: [0.2, 0, 1] },
+    kf: rep({ P: [0, 0.94, 0], lean: 0.03, nod: 0 }, { P: [0, 0.6, -0.2], lean: 1.0, nod: -0.7 }) },
+  "Dumbbell Upright Row": { view: "stand", period: 2.8, mode: "world", db: "pair", dbAxis: "lat",
+    base: { ...ST }, kf: rep({ hand: [-0.08, -0.52, 0.12], elb: [1, 0, -0.2] }, { hand: [-0.1, 0, 0.12], elb: [1, 0.8, 0] }) },
+  "Dumbbell Glute Bridge": { view: "floor", period: 3, mode: "pelvis", db: "pair", dbAxis: "lat",
+    base: { ...LIE, hand: [0.13, 0.04, 0.15], elb: [1, 0.2, -0.6] },
+    kf: rep({ P: [0, 0.11, 0.3], lean: -1.571, nod: 0.15 }, BRIDGE_UP) },
+  "Dumbbell Neutral-Grip Bent-Over Row": { view: "stand", period: 2.8, mode: "torso", db: "pair", dbAxis: "z",
+    base: { ...ST, ...ROW }, kf: rep(ROW_DOWN, { hand: [0.03, -0.3, 0.04], elb: [0.05, 0.3, -1] }) },
+  "Dumbbell Thrusters": { view: "stand", period: 3.4, mode: "torso", db: "pair", dbAxis: "lat",
+    base: { ...ST, foot: [0.15, 0.07, 0], toe: [0.3, 0, 1], knee: [0.35, 0, 1] },
+    kf: (() => { const S = { P: [0, 0.94, 0], lean: 0.04, nod: 0, ...RACK }, B = { P: [0, 0.45, -0.18], lean: 0.4, nod: -0.35, ...RACK }, T = { P: [0, 0.95, 0], lean: 0.02, nod: 0, ...OVER };
+      return [[0, S], [0.05, S], [0.35, B], [0.42, B], [0.62, T], [0.75, T], [0.95, S], [1, S]]; })() },
+  "Lying Dumbbell Tricep Extension": { view: "floor", period: 3, mode: "torso", db: "one", dbAxis: "fore", dbAlong: -0.07,
+    base: { ...LIE }, kf: rep({ hand: [-0.16, 0, 0.53], elb: [0.4, -0.3, 1] }, { hand: [-0.16, 0.3, 0.16], elb: [0.3, -0.5, 1] }) },
+
+  "Dumbbell Sumo Squat": { view: "stand", period: 3.2, mode: "world", db: "pair", dbAxis: "z",
+    base: { ...ST, foot: [0.33, 0.07, 0.03], toe: [0.7, 0, 1], knee: [1, 0, 0.6], hand: [-0.12, -0.54, 0.04], elb: [1, 0, -0.3] },
+    kf: rep({ P: [0, 0.92, 0], lean: 0.06, nod: 0 }, { P: [0, 0.5, -0.05], lean: 0.25, nod: -0.15 }) },
+  "Dumbbell Underhand Row": { view: "stand", period: 2.8, mode: "torso", db: "pair", dbAxis: "lat",
+    base: { ...ST, ...ROW }, kf: rep(ROW_DOWN, { hand: [0.03, -0.3, 0.04], elb: [0.05, 0.3, -1] }) },
+  "Lying Dumbbell Narrow Press": { view: "floor", period: 3, mode: "torso", db: "pair", dbAxis: "up",
+    base: { ...LIE }, kf: rep({ hand: [-0.12, -0.14, 0.15], elb: [0.2, -1, -0.6] }, { hand: [-0.12, -0.05, 0.53], elb: [0.3, -0.6, 0] }) },
+  "Dumbbell Push Press": { view: "stand", period: 2.8, mode: "torso", db: "pair", dbAxis: "lat", base: { ...ST, ...RACK },
+    kf: (() => { const R = { P: [0, 0.94, 0], lean: 0.03, ...RACK }, D = { P: [0, 0.85, -0.04], lean: 0.03, ...RACK }, T = { P: [0, 0.95, 0], lean: 0.02, ...OVER };
+      return [[0, R], [0.08, R], [0.2, D], [0.4, T], [0.55, T], [0.9, R], [1, R]]; })() },
+  "Dumbbell Hang Power Clean": { view: "stand", period: 3, mode: "torso", db: "pair", dbAxis: "lat", base: { ...ST },
+    kf: [[0, CLEAN.H], [0.08, CLEAN.H], [0.2, CLEAN.X], [0.3, CLEAN.C], [0.45, CLEAN.S], [0.58, CLEAN.S], [0.92, CLEAN.H], [1, CLEAN.H]] },
+  "Lying Weighted Crunch": { view: "floor", period: 2.6, mode: "torso", db: "one", dbAxis: "lat", dbOff: [0, 0, 0.04],
+    base: { ...LIE, hand: [-0.12, -0.12, 0.13], elb: [1, -0.5, 0.2] },
+    kf: rep({ lean: -1.571, nod: 0.15 }, { lean: -1.0, nod: 0.35 }) },
+
+  "Dumbbell Reverse Lunges": { view: "stand", period: 4.4, mode: "world", db: "pair", dbAxis: "z",
+    base: { ...ST, ...LUNGE_S, hand: [0.03, -0.54, 0.02] },
+    kf: [[0, LUNGE_S], [0.05, LUNGE_S], [0.25, lungeBack("L", "R")], [0.32, lungeBack("L", "R")], [0.48, LUNGE_S], [0.55, LUNGE_S],
+         [0.75, lungeBack("R", "L")], [0.82, lungeBack("R", "L")], [0.98, LUNGE_S], [1, LUNGE_S]] },
+  "Dumbbell Clean and Press": { view: "stand", period: 4.2, mode: "torso", db: "pair", dbAxis: "lat", base: { ...ST },
+    kf: [[0, CLEAN.H], [0.06, CLEAN.H], [0.16, CLEAN.X], [0.24, CLEAN.C], [0.36, CLEAN.S], [0.54, { ...CLEAN.S, ...OVER }],
+         [0.64, { ...CLEAN.S, ...OVER }], [0.78, CLEAN.S], [0.96, CLEAN.H], [1, CLEAN.H]] },
+  "Lying Dumbbell Squeeze Press": { view: "floor", period: 3, mode: "torso", db: "pair", dbAxis: "up",
+    base: { ...LIE }, kf: rep({ hand: [-0.13, -0.14, 0.15], elb: [0.6, -0.6, -0.4] }, { hand: [-0.13, -0.05, 0.53], elb: [0.6, -0.4, 0] }) },
+  "Dumbbell Renegade Row": { view: "plank", period: 3.6, mode: "world", db: "pair", dbAxis: "z",
+    base: { P: [0, 0.45, 0], lean: 1.22, nod: -0.3, twist: 0, foot: [0.14, 0.11, -0.8], knee: [0, -1, 0], toe: [0, -1, 0.15], ...PLANK },
+    kf: [[0, PLANK], [0.08, PLANK], [0.25, rowSide("L")], [0.33, rowSide("L")], [0.48, PLANK], [0.55, PLANK],
+         [0.72, rowSide("R")], [0.8, rowSide("R")], [0.95, PLANK], [1, PLANK]] },
+  "Lying Dumbbell Russian Twist": { view: "sit", period: 2.6, mode: "torso", db: "one", dbAxis: "lat", dbOff: [0, 0, 0.04],
+    base: { P: [0, 0.13, 0], lean: -0.6, nod: 0.45, twist: 0, foot: [0.12, 0.2, 0.62], knee: [0.15, 1, 0.3], toe: [0.1, 0.3, 1], hand: [-0.15, -0.22, 0.3], elb: [0.6, -0.6, 0] },
+    kf: [[0, { twist: 0.7 }], [0.08, { twist: 0.7 }], [0.5, { twist: -0.7 }], [0.58, { twist: -0.7 }], [1, { twist: 0.7 }]] },
+
+  "Dumbbell Suitcase Squat": { view: "stand", period: 3.2, mode: "world", db: "pair", dbAxis: "z",
+    base: { ...ST, foot: [0.14, 0.07, 0], toe: [0.2, 0, 1], knee: [0.25, 0, 1], hand: [0.04, -0.54, 0] },
+    kf: rep({ P: [0, 0.94, 0], lean: 0.04, nod: 0 }, { P: [0, 0.47, -0.15], lean: 0.3, nod: -0.2 }) },
+  "Dumbbell Romanian Deadlift (RDL)": { view: "stand", period: 3.4, mode: "world", db: "pair", dbAxis: "lat",
+    base: { ...ST, hand: [0, -0.54, 0.05] },
+    kf: rep({ P: [0, 0.93, 0], lean: 0.03, nod: 0 }, { P: [0, 0.86, -0.22], lean: 1.25, nod: -0.75 }) },
+  "Dumbbell Glute Bridge with Floor Press": { view: "floor", period: 3, mode: "torso", db: "pair", dbAxis: "lat",
+    base: { ...LIE, ...BRIDGE_UP }, kf: rep({ hand: [0.12, -0.24, 0.16], elb: [1, 0.3, -0.35] }, { hand: [0, -0.28, 0.46], elb: [1, 0, 0] }) },
+  "Dumbbell Bicep Curl to Shoulder Press": { view: "stand", period: 4, mode: "torso", db: "pair", dbAxis: "lat", base: { ...ST },
+    kf: (() => { const H = { hand: [0.03, -0.54, 0.05], elb: [0.1, 0, -1] }, C = { hand: [0.03, -0.02, 0.14], elb: [0.1, -1, -0.25] };
+      return [[0, H], [0.06, H], [0.26, C], [0.32, C], [0.5, OVER], [0.6, OVER], [0.76, C], [0.94, H], [1, H]]; })() },
+  "Dumbbell Standing Horizontal Press-Out": { view: "stand", period: 2.6, mode: "torso", db: "one", dbAxis: "up",
+    base: { ...ST, P: [0, 0.9, 0], foot: [0.15, 0.07, 0] },
+    kf: rep({ hand: [-0.15, -0.12, 0.13], elb: [0.4, -1, 0] }, { hand: [-0.15, -0.12, 0.52], elb: [0.4, -1, 0] }) },
+  "Lying Dumbbell Chest Flys": { view: "floor", period: 3.2, mode: "torso", db: "pair", dbAxis: "up",
+    base: { ...LIE }, kf: rep({ hand: [-0.08, -0.05, 0.52], elb: [1, -0.3, 0] }, { hand: [0.48, -0.05, 0.1], elb: [0.2, -0.5, -1] }) },
+};
+
+const FALLBACK = { handL: "hand", handR: "hand", elbL: "elb", elbR: "elb", footL: "foot", footR: "foot", kneeL: "knee", kneeR: "knee", toeL: "toe", toeR: "toe" };
+for (const def of Object.values(EX)) {
+  let prev = { ...def.base };
+  def.k = def.kf.map(([t, o]) => { prev = { ...prev, ...o }; return [t, prev]; });
+}
+const mix = (a, b, e) => a == null ? b : b == null ? a : Array.isArray(a) ? a.map((x, i) => x + (b[i] - x) * e) : a + (b - a) * e;
+function sample(def, time) {
+  const u = (time % def.period) / def.period, k = def.k;
+  let i = 0;
+  while (i < k.length - 2 && u >= k[i + 1][0]) i++;
+  const [t0, a] = k[i], [t1, b] = k[i + 1];
+  const x = t1 > t0 ? Math.min(1, Math.max(0, (u - t0) / (t1 - t0))) : 0;
+  const e = x * x * (3 - 2 * x);
+  const out = {};
+  for (const key of new Set([...Object.keys(a), ...Object.keys(b)])) {
+    const fb = FALLBACK[key];
+    out[key] = mix(a[key] ?? (fb && a[fb]), b[key] ?? (fb && b[fb]), e);
+  }
+  return out;
+}
+
+/* ---------- Kinematyka ---------- */
+function ik(S, T, a, b, pole) {
+  const d0 = T.clone().sub(S);
+  const dir = d0.clone().normalize();
+  const d = Math.min(Math.max(d0.length(), Math.abs(a - b) + 1e-3), a + b - 1e-4);
+  const Tn = S.clone().addScaledVector(dir, d);
+  const cosA = (a * a + d * d - b * b) / (2 * a * d);
+  const sinA = Math.sqrt(Math.max(0, 1 - cosA * cosA));
+  const n = pole.clone().addScaledVector(dir, -pole.dot(dir));
+  if (n.lengthSq() < 1e-8) n.set(1, 0, 0);
+  n.normalize();
+  return [S.clone().addScaledVector(dir, a * cosA).addScaledVector(n, a * sinA), Tn];
+}
+const inFrame = (f, a, s) => f.lat.clone().multiplyScalar(a[0] * s).addScaledVector(f.up, a[1]).addScaledVector(f.fwd, a[2]);
+const WORLD = { lat: new THREE.Vector3(1, 0, 0), up: new THREE.Vector3(0, 1, 0), fwd: new THREE.Vector3(0, 0, 1) };
+
+function solve(p, def) {
+  const P = V3(p.P), c = Math.cos(p.lean), s = Math.sin(p.lean);
+  const pel = { up: new THREE.Vector3(0, c, s), fwd: new THREE.Vector3(0, -s, c), lat: new THREE.Vector3(1, 0, 0) };
+  const tw = p.twist || 0;
+  const tor = { up: pel.up.clone(), fwd: pel.fwd.clone().applyAxisAngle(pel.up, tw), lat: pel.lat.clone().applyAxisAngle(pel.up, tw) };
+  const C = P.clone().addScaledVector(tor.up, LEN.torso);
+  const nod = p.nod || 0;
+  const headDir = tor.up.clone().multiplyScalar(Math.cos(nod)).addScaledVector(tor.fwd, Math.sin(nod)).normalize();
+  const r = { P, C, pel, tor, headDir, arm: {}, leg: {} };
+  for (const sd of [1, -1]) {
+    const L = sd > 0 ? "L" : "R";
+    const S = C.clone().addScaledVector(tor.lat, 0.19 * sd).addScaledVector(tor.up, -0.03);
+    const h = p["hand" + L] ?? p.hand, e = p["elb" + L] ?? p.elb;
+    let T, pole;
+    if (def.mode === "pelvis") { T = P.clone().add(inFrame(pel, h, sd)); pole = inFrame(pel, e, sd); }
+    else if (def.mode === "world") { T = S.clone().add(inFrame(WORLD, h, sd)); pole = inFrame(WORLD, e, sd); }
+    else { T = S.clone().add(inFrame(tor, h, sd)); pole = inFrame(tor, e, sd); }
+    const [E, H] = ik(S, T, LEN.upper, LEN.fore, pole);
+    r.arm[sd] = { S, E, H };
+
+    const Hip = P.clone().addScaledVector(pel.lat, 0.1 * sd).addScaledVector(pel.up, -0.02);
+    const f = p["foot" + L] ?? p.foot, k = p["knee" + L] ?? p.knee, t = p["toe" + L] ?? p.toe;
+    const [K, A] = ik(Hip, new THREE.Vector3(f[0] * sd, f[1], f[2]), LEN.thigh, LEN.shin, new THREE.Vector3(k[0] * sd, k[1], k[2]));
+    r.leg[sd] = { Hip, K, A, toe: new THREE.Vector3(t[0] * sd, t[1], t[2]).normalize() };
+  }
+  // hantle
+  r.dbs = [];
+  const axisOf = (name, sd) => {
+    if (name === "lat") return tor.lat.clone();
+    if (name === "up") return tor.up.clone();
+    if (name === "z") return new THREE.Vector3(0, 0, 1);
+    if (name === "fore") {
+      const a = sd ? r.arm[sd] : null;
+      if (a) return a.H.clone().sub(a.E).normalize();
+      return r.arm[1].H.clone().sub(r.arm[1].E).add(r.arm[-1].H.clone().sub(r.arm[-1].E)).normalize();
+    }
+    return tor.lat.clone();
+  };
+  if (def.db === "pair") for (const sd of [1, -1]) r.dbs.push({ pos: r.arm[sd].H.clone(), axis: axisOf(def.dbAxis, sd) });
+  else if (def.db === "one") {
+    const axis = axisOf(def.dbAxis, 0);
+    const mid = r.arm[1].H.clone().add(r.arm[-1].H).multiplyScalar(0.5);
+    if (def.dbOff) mid.add(inFrame(tor, def.dbOff, 1));
+    if (def.dbAlong) mid.addScaledVector(axis, def.dbAlong);
+    r.dbs.push({ pos: mid, axis });
+  }
+  return r;
+}
+
+/* ---------- Model ---------- */
+const BODY = new THREE.MeshStandardMaterial({ color: 0xd6d6d6, roughness: 0.55, metalness: 0.05 });
+const JOINT = new THREE.MeshStandardMaterial({ color: 0xff2222, roughness: 0.4, emissive: 0x550000 });
+const IRON = new THREE.MeshStandardMaterial({ color: 0x2b2b2b, roughness: 0.35, metalness: 0.6 });
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x050505);
+scene.fog = new THREE.Fog(0x050505, 4.5, 10);
+const add = (m) => { m.castShadow = true; scene.add(m); return m; };
+const capsule = (len, r) => add(new THREE.Mesh(new THREE.CapsuleGeometry(r, Math.max(len - 2 * r, 0.001), 6, 14), BODY));
+const ball = (r, mat = JOINT) => add(new THREE.Mesh(new THREE.SphereGeometry(r, 16, 12), mat));
+
+const M = {
+  torso: capsule(0.46, 0.13), pelvis: capsule(0.26, 0.085), neck: capsule(0.1, 0.045),
+  head: ball(0.11, BODY), limbs: {},
+};
+M.torso.scale.set(1.25, 1, 0.8);
+M.head.scale.set(0.9, 1.08, 0.95);
+for (const sd of [1, -1]) {
+  const foot = add(new THREE.Mesh(new THREE.BoxGeometry(0.09, 0.06, 0.24), BODY));
+  M.limbs[sd] = {
+    upper: capsule(LEN.upper, 0.045), fore: capsule(LEN.fore, 0.04), thigh: capsule(LEN.thigh, 0.065), shin: capsule(LEN.shin, 0.05),
+    sh: ball(0.047), el: ball(0.042), hand: ball(0.045, BODY), hip: ball(0.068), kn: ball(0.053), foot,
+  };
+}
+const DBS = [0, 1].map(() => {
+  const g = new THREE.Group();
+  const handle = new THREE.Mesh(new THREE.CylinderGeometry(0.018, 0.018, 0.2, 12), IRON);
+  g.add(handle);
+  for (const y of [0.11, -0.11]) {
+    const pl = new THREE.Mesh(new THREE.CylinderGeometry(0.065, 0.065, 0.06, 6), IRON);
+    pl.position.y = y; pl.castShadow = true; g.add(pl);
+  }
+  scene.add(g);
+  return g;
+});
+
+const tmpM = new THREE.Matrix4();
+function seg(mesh, a, b) {
+  mesh.position.copy(a).add(b).multiplyScalar(0.5);
+  mesh.quaternion.setFromUnitVectors(YAX, b.clone().sub(a).normalize());
+}
+function apply(r) {
+  const { P, C, pel, tor, headDir } = r;
+  M.torso.position.copy(P).addScaledVector(tor.up, 0.25);
+  M.torso.quaternion.setFromRotationMatrix(tmpM.makeBasis(tor.lat, tor.up, tor.fwd));
+  M.pelvis.position.copy(P).addScaledVector(pel.up, -0.01);
+  M.pelvis.quaternion.setFromRotationMatrix(tmpM.makeBasis(pel.up, pel.lat, pel.fwd.clone().negate()));
+  seg(M.neck, C, C.clone().addScaledVector(headDir, 0.1));
+  M.head.position.copy(C).addScaledVector(headDir, 0.17);
+  M.head.quaternion.setFromUnitVectors(YAX, headDir);
+  for (const sd of [1, -1]) {
+    const m = M.limbs[sd], a = r.arm[sd], l = r.leg[sd];
+    seg(m.upper, a.S, a.E); seg(m.fore, a.E, a.H);
+    m.sh.position.copy(a.S); m.el.position.copy(a.E); m.hand.position.copy(a.H);
+    seg(m.thigh, l.Hip, l.K); seg(m.shin, l.K, l.A);
+    m.hip.position.copy(l.Hip); m.kn.position.copy(l.K);
+    const Z = l.toe, X = pel.lat.clone().addScaledVector(Z, -pel.lat.dot(Z)).normalize(), Y = Z.clone().cross(X);
+    m.foot.quaternion.setFromRotationMatrix(tmpM.makeBasis(X, Y, Z));
+    m.foot.position.copy(l.A).addScaledVector(Z, 0.06).addScaledVector(Y, -0.04);
+  }
+  DBS.forEach((g, i) => {
+    const d = r.dbs[i];
+    g.visible = !!d;
+    if (d) { g.position.copy(d.pos); g.quaternion.setFromUnitVectors(YAX, d.axis.normalize()); }
+  });
+}
+
+/* ---------- Scena i renderowanie ---------- */
+scene.add(new THREE.HemisphereLight(0xffffff, 0x220000, 0.9));
+const key = new THREE.DirectionalLight(0xffffff, 2.2);
+key.position.set(2.5, 4, 2);
+key.castShadow = true;
+key.shadow.mapSize.set(1024, 1024);
+Object.assign(key.shadow.camera, { left: -2, right: 2, top: 2, bottom: -2 });
+scene.add(key);
+const rim = new THREE.DirectionalLight(0xff2a2a, 1.6);
+rim.position.set(-3, 2, -2.5);
+scene.add(rim);
+const floor = new THREE.Mesh(new THREE.CircleGeometry(3, 64), new THREE.MeshStandardMaterial({ color: 0x111111, roughness: 0.9 }));
+floor.rotation.x = -Math.PI / 2;
+floor.receiveShadow = true;
+scene.add(floor);
+const ring = new THREE.Mesh(new THREE.RingGeometry(0.9, 0.92, 64), new THREE.MeshBasicMaterial({ color: 0x661010 }));
+ring.rotation.x = -Math.PI / 2; ring.position.y = 0.002;
+scene.add(ring);
+
+const VIEWS = {
+  stand: { t: [0, 0.8, 0], o: [3.1, 0.65, 2.4] },
+  floor: { t: [0, 0.26, 0.15], o: [2.4, 1.7, 1.9] },
+  plank: { t: [0, 0.3, -0.05], o: [2.9, 0.9, 1.3] },
+  sit:   { t: [0, 0.35, 0.2], o: [2.5, 1.1, 2.2] },
+};
+const camera = new THREE.PerspectiveCamera(35, 1, 0.1, 50);
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.outputEncoding = THREE.sRGBEncoding;
+renderer.physicallyCorrectLights = true;
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+let rw = 0, rh = 0;
+
+function renderInto(el, def, time) {
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  const w = Math.max(1, Math.round(el.clientWidth * dpr)), h = Math.max(1, Math.round(el.clientHeight * dpr));
+  if (w > rw || h > rh) { rw = Math.max(rw, w); rh = Math.max(rh, h); renderer.setSize(rw, rh, false); }
+  let cv = el.querySelector("canvas");
+  if (!cv) { cv = document.createElement("canvas"); el.appendChild(cv); }
+  if (cv.width !== w || cv.height !== h) { cv.width = w; cv.height = h; }
+
+  apply(solve(sample(def, time), def));
+  const v = VIEWS[def.view] || VIEWS.stand;
+  const aspect = w / h;
+  const dist = aspect < 1.45 ? 0.82 : 0.78;
+  camera.position.set(v.t[0] + v.o[0] * dist, v.t[1] + v.o[1] * dist, v.t[2] + v.o[2] * dist);
+  camera.aspect = aspect;
+  camera.updateProjectionMatrix();
+  camera.lookAt(v.t[0], v.t[1], v.t[2]);
+  renderer.setViewport(0, 0, w, h);
+  renderer.setScissor(0, 0, w, h);
+  renderer.setScissorTest(true);
+  renderer.render(scene, camera);
+  cv.getContext("2d").drawImage(renderer.domElement, 0, rh - h, w, h, 0, 0, w, h);
+}
+
+const t0 = performance.now();
+function frame() {
+  requestAnimationFrame(frame);
+  if (document.hidden) return;
+  const t = (performance.now() - t0) / 1000;
+  for (const el of document.querySelectorAll("[data-anim]")) {
+    if (!el.offsetParent) continue;
+    const b = el.getBoundingClientRect();
+    if (b.bottom < 0 || b.top > innerHeight) continue;
+    const def = EX[el.dataset.anim];
+    if (def) renderInto(el, def, window.__animU != null ? window.__animU * def.period : t);
+  }
+}
+frame();
+window.__EX3D = EX; // do podglądu/testów
+}
+</script>
+</body>
+</html>
